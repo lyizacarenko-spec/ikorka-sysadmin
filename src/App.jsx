@@ -126,7 +126,13 @@ function LoginScreen({ onLoggedIn }) {
   );
 }
 
-function TopBar({ tab, setTab, onLogout }) {
+const ROLE_LABELS = {
+  owner: "Власник",
+  manager: "Менеджер",
+  sysadmin: "Сисадмін",
+};
+
+function TopBar({ tab, setTab, onLogout, role }) {
   const tabs = [
     { id: "equipment", label: "Техніка", icon: MonitorSmartphone },
     { id: "daily", label: "Задачі на день", icon: ListChecks },
@@ -157,9 +163,14 @@ function TopBar({ tab, setTab, onLogout }) {
           );
         })}
       </div>
-      <button onClick={onLogout} style={{ background: "none", border: "none", color: T.sub, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}>
-        <LogOut size={14} /> Вийти
-      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <span style={{ color: T.sub, fontSize: 12.5 }}>
+          Ви увійшли як: <span style={{ color: T.text, fontWeight: 600 }}>{ROLE_LABELS[role] || role}</span>
+        </span>
+        <button onClick={onLogout} style={{ background: "none", border: "none", color: T.sub, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 12.5 }}>
+          <LogOut size={14} /> Вийти
+        </button>
+      </div>
     </div>
   );
 }
@@ -505,7 +516,7 @@ function Dashboard({ role, onLogout }) {
           </div>
         )}
       </div>
-      <TopBar tab={tab} setTab={setTab} onLogout={onLogout} />
+      <TopBar tab={tab} setTab={setTab} onLogout={onLogout} role={role} />
       {loading ? (
         <div style={{ padding: 40, color: T.sub, textAlign: "center" }}>Завантаження…</div>
       ) : (
