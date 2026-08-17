@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   Laptop, Headphones, Mouse, Package, Plus, Trash2, ClipboardCheck,
   Clock, Play, Check, X, AlertTriangle, CalendarClock, ListChecks,
-  MonitorSmartphone, ChevronRight, CircleDot, Lock, LogOut,
+  MonitorSmartphone, ChevronRight, ChevronLeft, CircleDot, Lock, LogOut,
+  TrendingUp, Pencil, Warehouse,
 } from "lucide-react";
 import { api, setStoredPin, clearStoredPin, getStoredRole, setStoredRole, clearStoredRole } from "./api.js";
 
@@ -47,6 +48,28 @@ function fmtDuration(startIso, endIso) {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return h > 0 ? `${h} год ${m} хв` : `${m} хв`;
+}
+function isSameDay(a, b) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+function getWeekDays(offset) {
+  const now = new Date();
+  const dow = now.getDay() === 0 ? 7 : now.getDay(); // 1=Mon..7=Sun
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - dow + 1 + offset * 7);
+  monday.setHours(0, 0, 0, 0);
+  return Array.from({ length: 5 }, (_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d;
+  });
+}
+const DOW_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт"];
+// "На складі" isn't a separate column in the DB — the real inventory data
+// already encodes location in `owner` (e.g. "Склад" vs a person's name),
+// so this filter matches on that text instead of a schema change.
+function isWarehouse(item) {
+  return (item.owner || "").trim().toLowerCase().startsWith("склад");
 }
 function useTicker(active) {
   const [, setTick] = useState(0);
@@ -137,6 +160,7 @@ function TopBar({ tab, setTab, onLogout, role }) {
     { id: "equipment", label: "Техніка", icon: MonitorSmartphone },
     { id: "daily", label: "Задачі на день", icon: ListChecks },
     { id: "assigned", label: "Задачі від керівника", icon: CalendarClock },
+    { id: "weekly", label: "Тижнева аналітика", icon: TrendingUp },
   ];
   return (
     <div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${T.border}`, padding: "0 20px", justifyContent: "space-between" }}>
@@ -178,16 +202,20 @@ function TopBar({ tab, setTab, onLogout, role }) {
 // ---------------- Equipment tab ----------------
 function EquipmentTab({ items, reload }) {
   const [catFilter, setCatFilter] = useState("all");
+  const [warehouseOnly, setWarehouseOnly] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [inventoryMode, setInventoryMode] = useState(false);
   const [checked, setChecked] = useState({});
   const [form, setForm] = useState({ cat: "laptop", name: "", inv: "", owner: "" });
 
-  const filtered = items.filter((i) => catFilter === "all" || i.cat === catFilter);
+  const filtered = items.filter(
+    (i) => (catFilter === "all" || i.cat === catFilter) && (!warehouseOnly || isWarehouse(i))
+  );
   const counts = CATS.reduce((acc, c) => {
     acc[c.id] = items.filter((i) => i.cat === c.id && i.status !== "decommissioned").length;
     return acc;
   }, {});
+  const warehouseCount = items.filter(isWarehouse).length;
 
   async function addItem() {
     if (!form.name.trim()) return;
@@ -201,8 +229,8 @@ function EquipmentTab({ items, reload }) {
     reload();
   }
   async function finishInventory() {
-    const ids = Object.keys(checked).filter((id) => checked[id]);
-    await Promise.all(ids.map((id) => api.updateEquipment(id, { touchLastCheck: true })));
+    const ids = Object.keys(checked).filter((id) => checked[id]).map(Number);
+    if (ids.length) await api.bulkCheckEquipment(ids);
     setInventoryMode(false);
     setChecked({});
     reload();
@@ -224,6 +252,10 @@ function EquipmentTab({ items, reload }) {
               </button>
             );
           })}
+          <button onClick={() => setWarehouseOnly((v) => !v)} style={chipStyle(warehouseOnly)}>
+            <Warehouse size={13} style={{ marginRight: 5 }} />
+            На складі ({warehouseCount})
+          </button>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {!inventoryMode ? (
@@ -328,6 +360,9 @@ function EquipmentTab({ items, reload }) {
 // ---------------- Daily tasks tab ----------------
 function DailyTab({ items, reload }) {
   const [text, setText] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState("");
+
   async function add() {
     if (!text.trim()) return;
     await api.addDaily(text.trim());
@@ -340,6 +375,16 @@ function DailyTab({ items, reload }) {
   }
   async function remove(id) {
     await api.deleteDaily(id);
+    reload();
+  }
+  function startEdit(item) {
+    setEditingId(item.id);
+    setEditValue(item.text);
+  }
+  async function saveEdit(id) {
+    if (!editValue.trim()) return;
+    await api.editDaily(id, editValue.trim());
+    setEditingId(null);
     reload();
   }
   const doneCount = items.filter((i) => i.done).length;
@@ -360,9 +405,26 @@ function DailyTab({ items, reload }) {
         {items.map((item, idx) => (
           <div key={item.id} style={{ ...rowStyle, borderTop: idx > 0 ? `1px solid ${T.border}` : "none", gap: 10 }}>
             <input type="checkbox" checked={item.done} onChange={() => toggle(item)} />
-            <div style={{ flex: 1, textDecoration: item.done ? "line-through" : "none", color: item.done ? T.sub : T.text }}>
-              {item.text}
-            </div>
+            {editingId === item.id ? (
+              <input
+                autoFocus
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveEdit(item.id)}
+                onBlur={() => saveEdit(item.id)}
+                style={{ ...inputStyle, flex: 1 }}
+              />
+            ) : (
+              <div
+                onDoubleClick={() => startEdit(item)}
+                style={{ flex: 1, textDecoration: item.done ? "line-through" : "none", color: item.done ? T.sub : T.text }}
+              >
+                {item.text}
+              </div>
+            )}
+            <button onClick={() => startEdit(item)} style={{ background: "none", border: "none", color: T.sub, cursor: "pointer" }}>
+              <Pencil size={14} />
+            </button>
             <button onClick={() => remove(item.id)} style={{ background: "none", border: "none", color: T.sub, cursor: "pointer" }}>
               <Trash2 size={14} />
             </button>
@@ -386,6 +448,9 @@ function LiveElapsed({ startedAt }) {
 
 function AssignedTab({ items, reload, role }) {
   const [title, setTitle] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState("");
+
   async function addTask() {
     if (!title.trim()) return;
     await api.addAssigned(title.trim());
@@ -398,6 +463,20 @@ function AssignedTab({ items, reload, role }) {
   }
   async function finish(id) {
     await api.setAssignedStatus(id, "done");
+    reload();
+  }
+  function startEdit(task) {
+    setEditingId(task.id);
+    setEditValue(task.title);
+  }
+  async function saveEdit(id) {
+    if (!editValue.trim()) return;
+    await api.editAssignedTitle(id, editValue.trim());
+    setEditingId(null);
+    reload();
+  }
+  async function remove(id) {
+    await api.deleteAssigned(id);
     reload();
   }
 
@@ -430,7 +509,25 @@ function AssignedTab({ items, reload, role }) {
             <div key={task.id} style={{ ...panelStyle, padding: 16 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14.5, fontWeight: 600, marginBottom: 6 }}>{task.title}</div>
+                  {editingId === task.id ? (
+                    <input
+                      autoFocus
+                      value={editValue}
+                      onChange={(e) => setEditValue(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && saveEdit(task.id)}
+                      onBlur={() => saveEdit(task.id)}
+                      style={{ ...inputStyle, width: "100%", marginBottom: 6, boxSizing: "border-box" }}
+                    />
+                  ) : (
+                    <div style={{ fontSize: 14.5, fontWeight: 600, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                      {task.title}
+                      {role === "owner" && (
+                        <button onClick={() => startEdit(task)} style={{ background: "none", border: "none", color: T.sub, cursor: "pointer", display: "inline-flex" }}>
+                          <Pencil size={12} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: 14, fontSize: 12, color: T.sub, flexWrap: "wrap" }}>
                     {task.from_user && <span>Від: {task.from_user}</span>}
                     {task.started_at && <span>Взято: {fmtTime(task.started_at)}</span>}
@@ -447,12 +544,95 @@ function AssignedTab({ items, reload, role }) {
                   {task.status === "active" && (
                     <button onClick={() => finish(task.id)} style={btnStyle(T.accent)}><Check size={13} /> Завершити</button>
                   )}
+                  {role === "owner" && (
+                    <button onClick={() => remove(task.id)} style={{ background: "none", border: "none", color: T.sub, cursor: "pointer" }}>
+                      <Trash2 size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
           );
         })}
         {items.length === 0 && <div style={{ ...panelStyle, padding: 16, color: T.sub, fontSize: 13 }}>Задач від керівника ще немає.</div>}
+      </div>
+    </div>
+  );
+}
+
+// ---------------- Weekly analytics tab ----------------
+function WeeklyTab({ daily, assigned, equipmentLog }) {
+  const [offset, setOffset] = useState(0);
+  const days = getWeekDays(offset);
+  const monday = days[0], friday = days[4];
+  const rangeLabel = `${monday.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })} – ${friday.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })}`;
+
+  const dayData = days.map((d) => ({
+    date: d,
+    dailyDone: daily.filter((t) => t.completed_at && isSameDay(new Date(t.completed_at), d)),
+    assignedDone: assigned.filter((t) => t.finished_at && isSameDay(new Date(t.finished_at), d)),
+    equip: equipmentLog.filter((e) => isSameDay(new Date(e.ts), d)),
+  }));
+
+  const totals = {
+    daily: dayData.reduce((s, d) => s + d.dailyDone.length, 0),
+    assigned: dayData.reduce((s, d) => s + d.assignedDone.length, 0),
+    equip: dayData.reduce((s, d) => s + d.equip.length, 0),
+  };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => setOffset(offset - 1)} style={btnStyle(T.sub, true)}><ChevronLeft size={14} /></button>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>
+            Тиждень {rangeLabel} {offset === 0 && <span style={{ color: T.accent, fontWeight: 600, fontSize: 12 }}> · поточний</span>}
+          </div>
+          <button onClick={() => setOffset(offset + 1)} disabled={offset === 0} style={{ ...btnStyle(T.sub, true), opacity: offset === 0 ? 0.35 : 1, cursor: offset === 0 ? "default" : "pointer" }}>
+            <ChevronRight size={14} />
+          </button>
+        </div>
+        <div style={{ display: "flex", gap: 16, fontSize: 12.5, color: T.sub }}>
+          <span><b style={{ color: T.text }}>{totals.daily}</b> задач на день</span>
+          <span><b style={{ color: T.text }}>{totals.assigned}</b> задач від керівника</span>
+          <span><b style={{ color: T.text }}>{totals.equip}</b> дій з технікою</span>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+        {dayData.map((d, i) => {
+          const total = d.dailyDone.length + d.assignedDone.length + d.equip.length;
+          const isToday = isSameDay(d.date, new Date());
+          return (
+            <div key={i} style={{ ...panelStyle, padding: 12, border: isToday ? `1px solid ${T.accent}60` : panelStyle.border, minHeight: 160 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>{DOW_LABELS[i]} <span style={{ color: T.sub, fontWeight: 400 }}>{d.date.getDate()}.{String(d.date.getMonth() + 1).padStart(2, "0")}</span></div>
+                {total > 0 && <span style={{ fontSize: 11, color: T.accent, fontWeight: 700 }}>{total}</span>}
+              </div>
+              {total === 0 && <div style={{ fontSize: 12, color: T.sub, fontStyle: "italic" }}>Нічого не зафіксовано</div>}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {d.assignedDone.map((t) => (
+                  <div key={"a" + t.id} style={{ fontSize: 11.5, display: "flex", gap: 5, alignItems: "flex-start" }}>
+                    <Check size={11} color={T.accent} style={{ marginTop: 2, flexShrink: 0 }} />
+                    <span>{t.title} <span style={{ color: T.sub }}>({fmtDuration(t.started_at, t.finished_at)})</span></span>
+                  </div>
+                ))}
+                {d.dailyDone.map((t) => (
+                  <div key={"d" + t.id} style={{ fontSize: 11.5, display: "flex", gap: 5, alignItems: "flex-start" }}>
+                    <Check size={11} color={T.blue} style={{ marginTop: 2, flexShrink: 0 }} />
+                    <span>{t.text}</span>
+                  </div>
+                ))}
+                {d.equip.map((e) => (
+                  <div key={"e" + e.id} style={{ fontSize: 11.5, display: "flex", gap: 5, alignItems: "flex-start" }}>
+                    <MonitorSmartphone size={11} color={T.sub} style={{ marginTop: 2, flexShrink: 0 }} />
+                    <span>{e.action}: {e.item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -484,13 +664,17 @@ function btnStyle(color, ghost) {
 function Dashboard({ role, onLogout }) {
   const [tab, setTab] = useState("equipment");
   const [equipment, setEquipment] = useState([]);
+  const [equipmentLog, setEquipmentLog] = useState([]);
   const [daily, setDaily] = useState([]);
   const [assigned, setAssigned] = useState([]);
   const [loading, setLoading] = useState(true);
 
   async function reloadAll() {
-    const [eq, dl, asg] = await Promise.all([api.getEquipment(), api.getDaily(), api.getAssigned()]);
+    const [eq, log, dl, asg] = await Promise.all([
+      api.getEquipment(), api.getEquipmentLog(), api.getDaily(), api.getAssigned(),
+    ]);
     setEquipment(eq);
+    setEquipmentLog(log);
     setDaily(dl);
     setAssigned(asg);
     setLoading(false);
@@ -524,6 +708,7 @@ function Dashboard({ role, onLogout }) {
           {tab === "equipment" && <EquipmentTab items={equipment} reload={reloadAll} />}
           {tab === "daily" && <DailyTab items={daily} reload={reloadAll} />}
           {tab === "assigned" && <AssignedTab items={assigned} reload={reloadAll} role={role} />}
+          {tab === "weekly" && <WeeklyTab daily={daily} assigned={assigned} equipmentLog={equipmentLog} />}
         </>
       )}
     </div>

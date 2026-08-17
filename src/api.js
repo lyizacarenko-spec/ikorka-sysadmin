@@ -45,11 +45,17 @@ export const api = {
   updateEquipment: (id, patch) =>
     request(`/equipment/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteEquipment: (id) => request(`/equipment/${id}`, { method: "DELETE" }),
+  bulkCheckEquipment: (ids) =>
+    request("/equipment/bulk-check", { method: "PATCH", body: JSON.stringify({ ids }) }),
+
+  getEquipmentLog: () => request("/equipment-log"),
 
   getDaily: () => request("/daily-tasks"),
   addDaily: (text) => request("/daily-tasks", { method: "POST", body: JSON.stringify({ text }) }),
   toggleDaily: (id, done) =>
     request(`/daily-tasks/${id}`, { method: "PATCH", body: JSON.stringify({ done }) }),
+  editDaily: (id, text) =>
+    request(`/daily-tasks/${id}`, { method: "PATCH", body: JSON.stringify({ text }) }),
   deleteDaily: (id) => request(`/daily-tasks/${id}`, { method: "DELETE" }),
 
   getAssigned: () => request("/assigned-tasks"),
@@ -57,6 +63,9 @@ export const api = {
     request("/assigned-tasks", { method: "POST", body: JSON.stringify({ title }) }),
   setAssignedStatus: (id, status) =>
     request(`/assigned-tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  editAssignedTitle: (id, title) =>
+    request(`/assigned-tasks/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
+  deleteAssigned: (id) => request(`/assigned-tasks/${id}`, { method: "DELETE" }),
 };
 
 export function setStoredPin(p) {
