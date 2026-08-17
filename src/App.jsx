@@ -668,16 +668,27 @@ function Dashboard({ role, onLogout }) {
   const [daily, setDaily] = useState([]);
   const [assigned, setAssigned] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
+  // A single failed request here used to leave the whole Promise.all
+  // rejected with nothing to catch it — loading stayed true forever,
+  // no matter what actually caused the failure. Always resolve out of
+  // "loading" now, and show a retry instead of hanging silently.
   async function reloadAll() {
-    const [eq, log, dl, asg] = await Promise.all([
-      api.getEquipment(), api.getEquipmentLog(), api.getDaily(), api.getAssigned(),
-    ]);
-    setEquipment(eq);
-    setEquipmentLog(log);
-    setDaily(dl);
-    setAssigned(asg);
-    setLoading(false);
+    setLoadError(null);
+    try {
+      const [eq, log, dl, asg] = await Promise.all([
+        api.getEquipment(), api.getEquipmentLog(), api.getDaily(), api.getAssigned(),
+      ]);
+      setEquipment(eq);
+      setEquipmentLog(log);
+      setDaily(dl);
+      setAssigned(asg);
+    } catch (e) {
+      setLoadError(e.message || "load_failed");
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { reloadAll(); }, []);
 
@@ -703,6 +714,15 @@ function Dashboard({ role, onLogout }) {
       <TopBar tab={tab} setTab={setTab} onLogout={onLogout} role={role} />
       {loading ? (
         <div style={{ padding: 40, color: T.sub, textAlign: "center" }}>Завантаження…</div>
+      ) : loadError ? (
+        <div style={{ padding: 40, textAlign: "center" }}>
+          <div style={{ color: T.red, fontSize: 13, marginBottom: 12 }}>
+            Не вдалося завантажити дані: {loadError}
+          </div>
+          <button onClick={() => { setLoading(true); reloadAll(); }} style={btnStyle(T.accent)}>
+            Повторити
+          </button>
+        </div>
       ) : (
         <>
           {tab === "equipment" && <EquipmentTab items={equipment} reload={reloadAll} />}
