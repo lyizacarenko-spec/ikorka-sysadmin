@@ -3,7 +3,7 @@ import {
   Laptop, Headphones, Mouse, Package, Plus, Trash2, ClipboardCheck,
   Clock, Play, Check, X, AlertTriangle, CalendarClock, ListChecks,
   MonitorSmartphone, ChevronRight, ChevronLeft, CircleDot, Lock, LogOut,
-  TrendingUp, Pencil, Warehouse,
+  TrendingUp, Pencil, Warehouse, Building2, CreditCard, Layers,
 } from "lucide-react";
 import { api, setStoredPin, clearStoredPin, getStoredRole, setStoredRole, clearStoredRole } from "./api.js";
 
@@ -36,6 +36,41 @@ const STATUS = {
   decommissioned: { label: "Списано", color: T.red },
 };
 
+const ZONES = [
+  { id: "warehouse", label: "Склад", icon: Warehouse },
+  { id: "office", label: "Офіс", icon: Building2 },
+];
+
+// "storage" means two different things depending on where the item
+// physically is: on the warehouse it really is "on the shelf"; in the
+// office it means "not checked out to anyone right now" — a reserve,
+// not a location. Same status value in the DB, different label.
+function statusLabel(status, zone) {
+  if (status === "storage" && zone === "office") return "В резерві";
+  return STATUS[status]?.label || status;
+}
+
+// Extensible asset types beyond physical equipment. Each type just
+// declares its fields + statuses — the backend stores them in a single
+// JSONB column, so adding a new type here needs no migration.
+const ASSET_TYPES = {
+  sim: {
+    label: "Сім-карти",
+    icon: CreditCard,
+    fields: [
+      { key: "number", label: "Номер", placeholder: "+380 XX XXX XX XX" },
+      { key: "operator", label: "Оператор", placeholder: "Київстар / Vodafone / lifecell" },
+      { key: "assigned_to", label: "Кому видано", placeholder: "Ім'я або «Склад»" },
+    ],
+    statuses: {
+      active: { label: "Активна", color: T.accent },
+      free: { label: "Вільна", color: T.blue },
+      blocked: { label: "Заблокована", color: T.amber },
+      lost: { label: "Втрачена", color: T.red },
+    },
+  },
+};
+
 function fmtTime(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -65,12 +100,6 @@ function getWeekDays(offset) {
   });
 }
 const DOW_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт"];
-// "На складі" isn't a separate column in the DB — the real inventory data
-// already encodes location in `owner` (e.g. "Склад" vs a person's name),
-// so this filter matches on that text instead of a schema change.
-function isWarehouse(item) {
-  return (item.owner || "").trim().toLowerCase().startsWith("склад");
-}
 function useTicker(active) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -158,6 +187,7 @@ const ROLE_LABELS = {
 function TopBar({ tab, setTab, onLogout, role }) {
   const tabs = [
     { id: "equipment", label: "Техніка", icon: MonitorSmartphone },
+    { id: "assets", label: "Інші активи", icon: Layers },
     { id: "daily", label: "Задачі на день", icon: ListChecks },
     { id: "assigned", label: "Задачі від керівника", icon: CalendarClock },
     { id: "weekly", label: "Тижнева аналітика", icon: TrendingUp },
@@ -201,25 +231,27 @@ function TopBar({ tab, setTab, onLogout, role }) {
 
 // ---------------- Equipment tab ----------------
 function EquipmentTab({ items, reload }) {
+  const [zone, setZone] = useState("warehouse");
   const [catFilter, setCatFilter] = useState("all");
-  const [warehouseOnly, setWarehouseOnly] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [inventoryMode, setInventoryMode] = useState(false);
   const [checked, setChecked] = useState({});
   const [form, setForm] = useState({ cat: "laptop", name: "", inv: "", owner: "" });
 
-  const filtered = items.filter(
-    (i) => (catFilter === "all" || i.cat === catFilter) && (!warehouseOnly || isWarehouse(i))
-  );
+  const zoneItems = items.filter((i) => (i.zone || "warehouse") === zone);
+  const filtered = zoneItems.filter((i) => catFilter === "all" || i.cat === catFilter);
   const counts = CATS.reduce((acc, c) => {
-    acc[c.id] = items.filter((i) => i.cat === c.id && i.status !== "decommissioned").length;
+    acc[c.id] = zoneItems.filter((i) => i.cat === c.id && i.status !== "decommissioned").length;
     return acc;
   }, {});
-  const warehouseCount = items.filter(isWarehouse).length;
+  const zoneCounts = ZONES.reduce((acc, z) => {
+    acc[z.id] = items.filter((i) => (i.zone || "warehouse") === z.id).length;
+    return acc;
+  }, {});
 
   async function addItem() {
     if (!form.name.trim()) return;
-    await api.addEquipment({ cat: form.cat, name: form.name, inv: form.inv || null, owner: form.owner || null });
+    await api.addEquipment({ cat: form.cat, name: form.name, inv: form.inv || null, owner: form.owner || null, zone });
     setForm({ cat: "laptop", name: "", inv: "", owner: "" });
     setShowAdd(false);
     reload();
@@ -238,10 +270,33 @@ function EquipmentTab({ items, reload }) {
 
   return (
     <div style={{ padding: 20 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {ZONES.map((z) => {
+          const Icon = z.icon;
+          const active = zone === z.id;
+          return (
+            <button
+              key={z.id}
+              onClick={() => { setZone(z.id); setCatFilter("all"); }}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                padding: "9px 16px", borderRadius: 9, fontSize: 13.5, fontWeight: 700, cursor: "pointer",
+                background: active ? T.accent + "1f" : T.panel,
+                color: active ? T.accent : T.sub,
+                border: `1px solid ${active ? T.accent + "50" : T.border}`,
+              }}
+            >
+              <Icon size={15} />
+              {z.label} ({zoneCounts[z.id] || 0})
+            </button>
+          );
+        })}
+      </div>
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={() => setCatFilter("all")} style={chipStyle(catFilter === "all")}>
-            Усі ({items.length})
+            Усі ({zoneItems.length})
           </button>
           {CATS.map((c) => {
             const Icon = c.icon;
@@ -252,10 +307,6 @@ function EquipmentTab({ items, reload }) {
               </button>
             );
           })}
-          <button onClick={() => setWarehouseOnly((v) => !v)} style={chipStyle(warehouseOnly)}>
-            <Warehouse size={13} style={{ marginRight: 5 }} />
-            На складі ({warehouseCount})
-          </button>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {!inventoryMode ? (
@@ -270,7 +321,7 @@ function EquipmentTab({ items, reload }) {
           ) : (
             <>
               <span style={{ color: T.sub, fontSize: 13, alignSelf: "center" }}>
-                Відмічено {Object.values(checked).filter(Boolean).length} з {items.length}
+                Відмічено {Object.values(checked).filter(Boolean).length} з {zoneItems.length}
               </span>
               <button onClick={() => { setInventoryMode(false); setChecked({}); }} style={btnStyle(T.sub, true)}>
                 Скасувати
@@ -285,6 +336,9 @@ function EquipmentTab({ items, reload }) {
 
       {showAdd && (
         <div style={{ ...panelStyle, marginBottom: 16, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ fontSize: 12, color: T.sub, width: "100%" }}>
+            Додається в зону «{ZONES.find((z) => z.id === zone)?.label}»
+          </div>
           <div>
             <label style={labelStyle}>Категорія</label>
             <select value={form.cat} onChange={(e) => setForm({ ...form, cat: e.target.value })} style={inputStyle}>
@@ -345,13 +399,23 @@ function EquipmentTab({ items, reload }) {
                   onChange={(e) => setStatus(item.id, e.target.value)}
                   style={{ background: "transparent", border: "none", color: st.color, fontWeight: 600, fontSize: 12, fontFamily: "ui-monospace, monospace" }}
                 >
-                  {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k} style={{ background: T.panel, color: T.text }}>{v.label}</option>)}
+                  {Object.keys(STATUS).map((k) => (
+                    <option key={k} value={k} style={{ background: T.panel, color: T.text }}>
+                      {statusLabel(k, item.zone || "warehouse")}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
           );
         })}
-        {filtered.length === 0 && <div style={{ padding: 16, color: T.sub, fontSize: 13 }}>Немає техніки в цій категорії.</div>}
+        {filtered.length === 0 && (
+          <div style={{ padding: 16, color: T.sub, fontSize: 13 }}>
+            {zone === "office"
+              ? "Офісна техніка ще не заведена — додайте першу позицію."
+              : "Немає техніки в цій категорії."}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -638,6 +702,113 @@ function WeeklyTab({ daily, assigned, equipmentLog }) {
   );
 }
 
+// ---------------- Assets tab (SIM cards, extensible) ----------------
+function AssetsTab({ items, reload }) {
+  const typeKeys = Object.keys(ASSET_TYPES);
+  const [type, setType] = useState(typeKeys[0]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({});
+
+  const config = ASSET_TYPES[type];
+  const typeItems = items.filter((a) => a.type === type);
+
+  async function addAsset() {
+    const first = config.fields[0];
+    if (first && !String(form[first.key] || "").trim()) return;
+    await api.addAsset({ type, fields: form, status: Object.keys(config.statuses)[0] });
+    setForm({});
+    setShowAdd(false);
+    reload();
+  }
+  async function setStatus(id, status) {
+    await api.updateAsset(id, { status });
+    reload();
+  }
+  async function remove(id) {
+    await api.deleteAsset(id);
+    reload();
+  }
+
+  return (
+    <div style={{ padding: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {typeKeys.map((k) => {
+            const Icon = ASSET_TYPES[k].icon;
+            return (
+              <button key={k} onClick={() => { setType(k); setShowAdd(false); }} style={chipStyle(type === k)}>
+                <Icon size={13} style={{ marginRight: 5 }} />
+                {ASSET_TYPES[k].label} ({items.filter((a) => a.type === k).length})
+              </button>
+            );
+          })}
+        </div>
+        <button onClick={() => setShowAdd(true)} style={btnStyle(T.accent)}>
+          <Plus size={14} /> Додати
+        </button>
+      </div>
+
+      {showAdd && (
+        <div style={{ ...panelStyle, marginBottom: 16, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          {config.fields.map((f) => (
+            <div key={f.key}>
+              <label style={labelStyle}>{f.label}</label>
+              <input
+                value={form[f.key] || ""}
+                onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                placeholder={f.placeholder}
+                style={inputStyle}
+              />
+            </div>
+          ))}
+          <button onClick={addAsset} style={btnStyle(T.accent)}>Зберегти</button>
+          <button onClick={() => setShowAdd(false)} style={btnStyle(T.sub, true)}><X size={14} /></button>
+        </div>
+      )}
+
+      <div style={panelStyle}>
+        <div style={{ ...rowStyle, color: T.sub, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 700 }}>
+          {config.fields.map((f) => <div key={f.key} style={{ flex: 1 }}>{f.label}</div>)}
+          <div style={{ flex: 1 }}>Статус</div>
+          <div style={{ width: 24 }} />
+        </div>
+        {typeItems.map((item) => (
+          <div key={item.id} style={{ ...rowStyle, borderTop: `1px solid ${T.border}` }}>
+            {config.fields.map((f) => (
+              <div key={f.key} style={{ flex: 1, color: f.key === config.fields[0].key ? T.text : T.sub }}>
+                {item.fields?.[f.key] || "—"}
+              </div>
+            ))}
+            <div style={{ flex: 1 }}>
+              <select
+                value={item.status}
+                onChange={(e) => setStatus(item.id, e.target.value)}
+                style={{
+                  background: "transparent", border: "none", fontWeight: 600, fontSize: 12,
+                  fontFamily: "ui-monospace, monospace",
+                  color: config.statuses[item.status]?.color || T.sub,
+                }}
+              >
+                {Object.entries(config.statuses).map(([k, v]) => (
+                  <option key={k} value={k} style={{ background: T.panel, color: T.text }}>{v.label}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ width: 24 }}>
+              <button onClick={() => remove(item.id)} style={{ background: "none", border: "none", color: T.sub, cursor: "pointer" }}>
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
+        ))}
+        {typeItems.length === 0 && (
+          <div style={{ padding: 16, color: T.sub, fontSize: 13 }}>Ще немає жодного запису — додайте перший.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---------------- shared styles ----------------
 const panelStyle = { background: T.panel, border: `1px solid ${T.border}`, borderRadius: 10 };
 const rowStyle = { display: "flex", alignItems: "center", padding: "10px 14px", fontSize: 13.5 };
@@ -665,6 +836,7 @@ function Dashboard({ role, onLogout }) {
   const [tab, setTab] = useState("equipment");
   const [equipment, setEquipment] = useState([]);
   const [equipmentLog, setEquipmentLog] = useState([]);
+  const [assets, setAssets] = useState([]);
   const [daily, setDaily] = useState([]);
   const [assigned, setAssigned] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -677,11 +849,12 @@ function Dashboard({ role, onLogout }) {
   async function reloadAll() {
     setLoadError(null);
     try {
-      const [eq, log, dl, asg] = await Promise.all([
-        api.getEquipment(), api.getEquipmentLog(), api.getDaily(), api.getAssigned(),
+      const [eq, log, as, dl, asg] = await Promise.all([
+        api.getEquipment(), api.getEquipmentLog(), api.getAssets(), api.getDaily(), api.getAssigned(),
       ]);
       setEquipment(eq);
       setEquipmentLog(log);
+      setAssets(as);
       setDaily(dl);
       setAssigned(asg);
     } catch (e) {
@@ -726,6 +899,7 @@ function Dashboard({ role, onLogout }) {
       ) : (
         <>
           {tab === "equipment" && <EquipmentTab items={equipment} reload={reloadAll} />}
+          {tab === "assets" && <AssetsTab items={assets} reload={reloadAll} />}
           {tab === "daily" && <DailyTab items={daily} reload={reloadAll} />}
           {tab === "assigned" && <AssignedTab items={assigned} reload={reloadAll} role={role} />}
           {tab === "weekly" && <WeeklyTab daily={daily} assigned={assigned} equipmentLog={equipmentLog} />}

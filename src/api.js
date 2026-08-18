@@ -66,6 +66,12 @@ export const api = {
   editAssignedTitle: (id, title) =>
     request(`/assigned-tasks/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
   deleteAssigned: (id) => request(`/assigned-tasks/${id}`, { method: "DELETE" }),
+
+  getAssets: () => request("/assets"),
+  addAsset: (asset) => request("/assets", { method: "POST", body: JSON.stringify(asset) }),
+  updateAsset: (id, patch) =>
+    request(`/assets/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteAsset: (id) => request(`/assets/${id}`, { method: "DELETE" }),
 };
 
 export function setStoredPin(p) {
