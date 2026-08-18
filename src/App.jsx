@@ -59,7 +59,10 @@ const ASSET_TYPES = {
     icon: CreditCard,
     fields: [
       { key: "number", label: "Номер", placeholder: "+380 XX XXX XX XX" },
-      { key: "operator", label: "Оператор", placeholder: "Київстар / Vodafone / lifecell" },
+      {
+        key: "operator", label: "Оператор", type: "select",
+        options: ["Київстар", "Vodafone", "lifecell", "Trimob"], allowOther: true,
+      },
       { key: "assigned_to", label: "Кому видано", placeholder: "Ім'я або «Склад»" },
     ],
     statuses: {
@@ -786,15 +789,26 @@ function AssetsTab({ items, reload }) {
   const [type, setType] = useState(typeKeys[0]);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({});
+  const [otherMode, setOtherMode] = useState({});
 
   const config = ASSET_TYPES[type];
   const typeItems = items.filter((a) => a.type === type);
+
+  function selectField(key, value) {
+    if (value === "__other__") {
+      setOtherMode({ ...otherMode, [key]: true });
+      setForm({ ...form, [key]: "" });
+    } else {
+      setForm({ ...form, [key]: value });
+    }
+  }
 
   async function addAsset() {
     const first = config.fields[0];
     if (first && !String(form[first.key] || "").trim()) return;
     await api.addAsset({ type, fields: form, status: Object.keys(config.statuses)[0] });
     setForm({});
+    setOtherMode({});
     setShowAdd(false);
     reload();
   }
@@ -831,12 +845,41 @@ function AssetsTab({ items, reload }) {
           {config.fields.map((f) => (
             <div key={f.key}>
               <label style={labelStyle}>{f.label}</label>
-              <input
-                value={form[f.key] || ""}
-                onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                placeholder={f.placeholder}
-                style={inputStyle}
-              />
+              {f.type === "select" && !otherMode[f.key] ? (
+                <select
+                  value={form[f.key] || ""}
+                  onChange={(e) => selectField(f.key, e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="" disabled>Оберіть...</option>
+                  {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                  {f.allowOther && <option value="__other__">Інше…</option>}
+                </select>
+              ) : f.type === "select" ? (
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input
+                    autoFocus
+                    value={form[f.key] || ""}
+                    onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                    placeholder="Свій варіант"
+                    style={inputStyle}
+                  />
+                  <button
+                    onClick={() => { setOtherMode({ ...otherMode, [f.key]: false }); setForm({ ...form, [f.key]: "" }); }}
+                    style={btnStyle(T.sub, true)}
+                    title="Повернутись до списку"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : (
+                <input
+                  value={form[f.key] || ""}
+                  onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                  placeholder={f.placeholder}
+                  style={inputStyle}
+                />
+              )}
             </div>
           ))}
           <button onClick={addAsset} style={btnStyle(T.accent)}>Зберегти</button>
