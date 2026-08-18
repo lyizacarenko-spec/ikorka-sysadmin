@@ -237,6 +237,10 @@ function EquipmentTab({ items, reload }) {
   const [inventoryMode, setInventoryMode] = useState(false);
   const [checked, setChecked] = useState({});
   const [form, setForm] = useState({ cat: "laptop", name: "", inv: "", owner: "" });
+  const [showLogEntry, setShowLogEntry] = useState(false);
+  const [logForm, setLogForm] = useState({
+    date: new Date().toISOString().slice(0, 10), item: "", detail: "", action: "",
+  });
 
   const zoneItems = items.filter((i) => (i.zone || "warehouse") === zone);
   const filtered = zoneItems.filter((i) => catFilter === "all" || i.cat === catFilter);
@@ -269,6 +273,18 @@ function EquipmentTab({ items, reload }) {
     if (ids.length) await api.bulkCheckEquipment(ids);
     setInventoryMode(false);
     setChecked({});
+    reload();
+  }
+  async function addLogEntry() {
+    if (!logForm.item.trim()) return;
+    await api.addEquipmentLogEntry({
+      item: logForm.item.trim(),
+      detail: logForm.detail || null,
+      action: logForm.action.trim() || "manual",
+      ts: `${logForm.date}T12:00:00`,
+    });
+    setLogForm({ date: new Date().toISOString().slice(0, 10), item: "", detail: "", action: "" });
+    setShowLogEntry(false);
     reload();
   }
 
@@ -321,6 +337,9 @@ function EquipmentTab({ items, reload }) {
               <button onClick={() => setShowAdd(true)} style={btnStyle(T.accent)}>
                 <Plus size={14} /> Додати
               </button>
+              <button onClick={() => setShowLogEntry(true)} style={btnStyle(T.sub, true)}>
+                <Clock size={14} /> Запис заднім числом
+              </button>
             </>
           ) : (
             <>
@@ -363,6 +382,37 @@ function EquipmentTab({ items, reload }) {
           </div>
           <button onClick={addItem} style={btnStyle(T.accent)}>Зберегти</button>
           <button onClick={() => setShowAdd(false)} style={btnStyle(T.sub, true)}><X size={14} /></button>
+        </div>
+      )}
+
+      {showLogEntry && (
+        <div style={{ ...panelStyle, marginBottom: 16, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ fontSize: 12, color: T.sub, width: "100%" }}>
+            Ручний запис у лог дій — для того, що відбулось поза системою (напр. вчора)
+          </div>
+          <div>
+            <label style={labelStyle}>Дата</label>
+            <input
+              type="date"
+              value={logForm.date}
+              onChange={(e) => setLogForm({ ...logForm, date: e.target.value })}
+              style={{ ...inputStyle, colorScheme: "dark" }}
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Дія</label>
+            <input value={logForm.action} onChange={(e) => setLogForm({ ...logForm, action: e.target.value })} placeholder="напр. Ремонт" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Обладнання</label>
+            <input value={logForm.item} onChange={(e) => setLogForm({ ...logForm, item: e.target.value })} placeholder="напр. Lenovo ThinkPad E14" style={inputStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Деталі</label>
+            <input value={logForm.detail} onChange={(e) => setLogForm({ ...logForm, detail: e.target.value })} placeholder="напр. Замінено клавіатуру" style={inputStyle} />
+          </div>
+          <button onClick={addLogEntry} style={btnStyle(T.accent)}>Зберегти</button>
+          <button onClick={() => setShowLogEntry(false)} style={btnStyle(T.sub, true)}><X size={14} /></button>
         </div>
       )}
 
@@ -465,6 +515,11 @@ function DailyTab({ items, reload }) {
     setEditingId(null);
     reload();
   }
+  async function changeCompletedDate(id, dateStr) {
+    if (!dateStr) return;
+    await api.setDailyCompletedAt(id, `${dateStr}T12:00:00`);
+    reload();
+  }
   const doneCount = items.filter((i) => i.done).length;
   return (
     <div style={{ padding: 20, maxWidth: 640 }}>
@@ -499,6 +554,15 @@ function DailyTab({ items, reload }) {
               >
                 {item.text}
               </div>
+            )}
+            {item.done && (
+              <input
+                type="date"
+                title="Дата виконання — можна поставити заднім числом"
+                value={item.completed_at ? String(item.completed_at).slice(0, 10) : ""}
+                onChange={(e) => changeCompletedDate(item.id, e.target.value)}
+                style={{ ...inputStyle, padding: "4px 6px", fontSize: 11.5, colorScheme: "dark" }}
+              />
             )}
             <button onClick={() => startEdit(item)} style={{ background: "none", border: "none", color: T.sub, cursor: "pointer" }}>
               <Pencil size={14} />

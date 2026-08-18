@@ -48,7 +48,10 @@ export const api = {
   bulkCheckEquipment: (ids) =>
     request("/equipment/bulk-check", { method: "PATCH", body: JSON.stringify({ ids }) }),
 
-  getEquipmentLog: () => request("/equipment-log"),
+  getEquipmentLog: (limit) => request(`/equipment-log${limit ? `?limit=${limit}` : ""}`),
+  addEquipmentLogEntry: (entry) =>
+    request("/equipment-log", { method: "POST", body: JSON.stringify(entry) }),
+  deleteEquipmentLogEntry: (id) => request(`/equipment-log/${id}`, { method: "DELETE" }),
 
   getDaily: () => request("/daily-tasks"),
   addDaily: (text) => request("/daily-tasks", { method: "POST", body: JSON.stringify({ text }) }),
@@ -56,6 +59,8 @@ export const api = {
     request(`/daily-tasks/${id}`, { method: "PATCH", body: JSON.stringify({ done }) }),
   editDaily: (id, text) =>
     request(`/daily-tasks/${id}`, { method: "PATCH", body: JSON.stringify({ text }) }),
+  setDailyCompletedAt: (id, completed_at) =>
+    request(`/daily-tasks/${id}`, { method: "PATCH", body: JSON.stringify({ completed_at }) }),
   deleteDaily: (id) => request(`/daily-tasks/${id}`, { method: "DELETE" }),
 
   getAssigned: () => request("/assigned-tasks"),
