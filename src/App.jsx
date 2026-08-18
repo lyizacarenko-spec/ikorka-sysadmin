@@ -185,10 +185,11 @@ const ROLE_LABELS = {
   owner: "Власник",
   manager: "Менеджер",
   sysadmin: "Сисадмін",
+  evgeniya: "Євгенія",
 };
 const LUIZA_URL = "https://lyizacarenko-spec.github.io/ikorka-luiza/";
 
-function TopBar({ tab, setTab, onLogout, role }) {
+function TopBar({ tab, setTab, onLogout, role, queuedCount }) {
   const tabs = [
     { id: "equipment", label: "Техніка", icon: MonitorSmartphone },
     { id: "assets", label: "Інші активи", icon: Layers },
@@ -198,13 +199,14 @@ function TopBar({ tab, setTab, onLogout, role }) {
   ];
 
   // Same GitHub Pages origin as ikorka-luiza, so sessionStorage is shared
-  // across both apps — seed her personal panel's own keys before leaving,
-  // so she lands there already logged in as owner.
+  // across both apps — seed her personal panel's own keys with the PIN and
+  // role we already have here ('owner' and 'evgeniya' are both full-access
+  // there too), so she lands already logged in.
   function goToLuiza() {
     const pin = sessionStorage.getItem("ikorka_sysadmin_pin");
     if (pin) {
       sessionStorage.setItem("ikorka_luiza_pin", pin);
-      sessionStorage.setItem("ikorka_luiza_role", "owner");
+      sessionStorage.setItem("ikorka_luiza_role", role);
     }
     window.location.href = LUIZA_URL;
   }
@@ -215,6 +217,7 @@ function TopBar({ tab, setTab, onLogout, role }) {
         {tabs.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
+          const badge = t.id === "assigned" ? queuedCount : 0;
           return (
             <button
               key={t.id}
@@ -230,12 +233,22 @@ function TopBar({ tab, setTab, onLogout, role }) {
             >
               <Icon size={16} />
               {t.label}
+              {badge > 0 && (
+                <span style={{
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999,
+                  background: T.red, color: "#fff", fontSize: 11, fontWeight: 800,
+                  fontFamily: "ui-monospace, monospace", lineHeight: 1,
+                }}>
+                  +{badge}
+                </span>
+              )}
             </button>
           );
         })}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        {role === "owner" && (
+        {(role === "owner" || role === "evgeniya") && (
           <button onClick={goToLuiza} style={{ background: "none", border: "none", color: T.blue, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
             <ChevronLeft size={14} /> Моя панель
           </button>
@@ -683,7 +696,7 @@ function AssignedTab({ items, reload, role }) {
 
   return (
     <div style={{ padding: 20, maxWidth: 760 }}>
-      {role === "owner" && (
+      {(role === "owner" || role === "evgeniya") && (
         <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
           <input
             value={title}
@@ -716,7 +729,7 @@ function AssignedTab({ items, reload, role }) {
                   ) : (
                     <div style={{ fontSize: 14.5, fontWeight: 600, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
                       {task.title}
-                      {role === "owner" && (
+                      {(role === "owner" || role === "evgeniya") && (
                         <button onClick={() => startEdit(task)} style={{ background: "none", border: "none", color: T.sub, cursor: "pointer", display: "inline-flex" }}>
                           <Pencil size={12} />
                         </button>
@@ -739,7 +752,7 @@ function AssignedTab({ items, reload, role }) {
                   {task.status === "active" && (
                     <button onClick={() => finish(task.id)} style={btnStyle(T.accent)}><Check size={13} /> Завершити</button>
                   )}
-                  {role === "owner" && (
+                  {(role === "owner" || role === "evgeniya") && (
                     <button onClick={() => remove(task.id)} style={{ background: "none", border: "none", color: T.sub, cursor: "pointer" }}>
                       <Trash2 size={14} />
                     </button>
@@ -1102,6 +1115,7 @@ function Dashboard({ role, onLogout }) {
   useEffect(() => { reloadAll(); }, []);
 
   const activeCount = assigned.filter((a) => a.status === "active").length;
+  const queuedCount = assigned.filter((a) => a.status === "queued").length;
   const workingEquip = equipment.filter((e) => e.status !== "decommissioned").length;
 
   return (
@@ -1120,7 +1134,7 @@ function Dashboard({ role, onLogout }) {
           </div>
         )}
       </div>
-      <TopBar tab={tab} setTab={setTab} onLogout={onLogout} role={role} />
+      <TopBar tab={tab} setTab={setTab} onLogout={onLogout} role={role} queuedCount={queuedCount} />
       {loading ? (
         <div style={{ padding: 40, color: T.sub, textAlign: "center" }}>Завантаження…</div>
       ) : loadError ? (
