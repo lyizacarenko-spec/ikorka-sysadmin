@@ -260,6 +260,10 @@ function EquipmentTab({ items, reload }) {
     await api.updateEquipment(id, { status });
     reload();
   }
+  async function setItemZone(id, newZone) {
+    await api.updateEquipment(id, { zone: newZone });
+    reload();
+  }
   async function finishInventory() {
     const ids = Object.keys(checked).filter((id) => checked[id]).map(Number);
     if (ids.length) await api.bulkCheckEquipment(ids);
@@ -370,6 +374,7 @@ function EquipmentTab({ items, reload }) {
           <div style={{ flex: 1.4 }}>Місце</div>
           <div style={{ flex: 1 }}>Остання перевірка</div>
           <div style={{ flex: 1.2 }}>Статус</div>
+          <div style={{ flex: 1 }}>Зона</div>
         </div>
         {filtered.map((item) => {
           const cat = CATS.find((c) => c.id === item.cat) || CATS[3];
@@ -404,6 +409,15 @@ function EquipmentTab({ items, reload }) {
                       {statusLabel(k, item.zone || "warehouse")}
                     </option>
                   ))}
+                </select>
+              </div>
+              <div style={{ flex: 1 }}>
+                <select
+                  value={item.zone || "warehouse"}
+                  onChange={(e) => setItemZone(item.id, e.target.value)}
+                  style={{ background: "transparent", border: "none", color: T.sub, fontWeight: 600, fontSize: 12, fontFamily: "ui-monospace, monospace" }}
+                >
+                  {ZONES.map((z) => <option key={z.id} value={z.id} style={{ background: T.panel, color: T.text }}>{z.label}</option>)}
                 </select>
               </div>
             </div>
