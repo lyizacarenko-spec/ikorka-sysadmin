@@ -844,6 +844,13 @@ function AssetsTab({ items, reload }) {
   const config = ASSET_TYPES[type];
   const typeItems = items.filter((a) => a.type === type);
 
+  // { id, key } of the cell currently open for editing, plus its draft
+  // value — same click-to-edit pattern as "Місце" on the Техніка tab,
+  // generic over whatever fields the asset type declares.
+  const [editingCell, setEditingCell] = useState(null);
+  const [editCellValue, setEditCellValue] = useState("");
+  const [editCellOther, setEditCellOther] = useState(false);
+
   function selectField(key, value) {
     if (value === "__other__") {
       setOtherMode({ ...otherMode, [key]: true });
@@ -868,6 +875,17 @@ function AssetsTab({ items, reload }) {
   }
   async function remove(id) {
     await api.deleteAsset(id);
+    reload();
+  }
+  function startCellEdit(item, key) {
+    setEditingCell({ id: item.id, key });
+    setEditCellValue(item.fields?.[key] || "");
+    setEditCellOther(false);
+  }
+  async function saveCellEdit(item) {
+    const { id, key } = editingCell;
+    setEditingCell(null);
+    await api.updateAsset(id, { fields: { ...item.fields, [key]: editCellValue.trim() } });
     reload();
   }
 
@@ -945,11 +963,58 @@ function AssetsTab({ items, reload }) {
         </div>
         {typeItems.map((item) => (
           <div key={item.id} style={{ ...rowStyle, borderTop: `1px solid ${T.border}` }}>
-            {config.fields.map((f) => (
-              <div key={f.key} style={{ flex: 1, color: f.key === config.fields[0].key ? T.text : T.sub }}>
-                {item.fields?.[f.key] || "—"}
-              </div>
-            ))}
+            {config.fields.map((f) => {
+              const isEditing = editingCell?.id === item.id && editingCell?.key === f.key;
+              if (isEditing) {
+                return (
+                  <div key={f.key} style={{ flex: 1 }}>
+                    {f.type === "select" && !editCellOther ? (
+                      <select
+                        value={editCellValue}
+                        onChange={(e) => {
+                          if (e.target.value === "__other__") {
+                            setEditCellOther(true);
+                            setEditCellValue("");
+                          } else {
+                            setEditCellValue(e.target.value);
+                          }
+                        }}
+                        onBlur={() => !editCellOther && saveCellEdit(item)}
+                        autoFocus
+                        style={{ ...inputStyle, width: "100%", padding: "3px 6px", fontSize: 12.5, boxSizing: "border-box" }}
+                      >
+                        <option value="" disabled>Оберіть...</option>
+                        {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                        {f.allowOther && <option value="__other__">Інше…</option>}
+                      </select>
+                    ) : (
+                      <input
+                        autoFocus
+                        value={editCellValue}
+                        onChange={(e) => setEditCellValue(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && saveCellEdit(item)}
+                        onBlur={() => saveCellEdit(item)}
+                        style={{ ...inputStyle, width: "100%", padding: "3px 6px", fontSize: 12.5, boxSizing: "border-box" }}
+                      />
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <div
+                  key={f.key}
+                  onClick={() => startCellEdit(item, f.key)}
+                  title="Клікніть, щоб змінити"
+                  style={{
+                    flex: 1, color: f.key === config.fields[0].key ? T.text : T.sub,
+                    cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+                  }}
+                >
+                  {item.fields?.[f.key] || "—"}
+                  <Pencil size={11} style={{ opacity: 0.5, flexShrink: 0 }} />
+                </div>
+              );
+            })}
             <div style={{ flex: 1 }}>
               <select
                 value={item.status}
