@@ -587,6 +587,10 @@ function DailyTab({ items, reload }) {
     reload();
   }
   const doneCount = items.filter((i) => i.done).length;
+  // Unfinished on top, done at the bottom — recomputed from `items` on
+  // every render, so toggling a checkbox (which triggers reload()) moves
+  // it immediately without any extra state to keep in sync.
+  const sortedItems = [...items].sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1));
   return (
     <div style={{ padding: 20, maxWidth: 640 }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
@@ -601,7 +605,7 @@ function DailyTab({ items, reload }) {
       </div>
       <div style={{ color: T.sub, fontSize: 12, marginBottom: 10 }}>{doneCount} з {items.length} виконано</div>
       <div style={panelStyle}>
-        {items.map((item, idx) => (
+        {sortedItems.map((item, idx) => (
           <div key={item.id} style={{ ...rowStyle, borderTop: idx > 0 ? `1px solid ${T.border}` : "none", gap: 10 }}>
             <input type="checkbox" checked={item.done} onChange={() => toggle(item)} />
             {editingId === item.id ? (
