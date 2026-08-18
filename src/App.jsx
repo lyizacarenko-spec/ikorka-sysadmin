@@ -186,6 +186,7 @@ const ROLE_LABELS = {
   manager: "Менеджер",
   sysadmin: "Сисадмін",
 };
+const LUIZA_URL = "https://lyizacarenko-spec.github.io/ikorka-luiza/";
 
 function TopBar({ tab, setTab, onLogout, role }) {
   const tabs = [
@@ -195,6 +196,19 @@ function TopBar({ tab, setTab, onLogout, role }) {
     { id: "assigned", label: "Задачі від керівника", icon: CalendarClock },
     { id: "weekly", label: "Тижнева аналітика", icon: TrendingUp },
   ];
+
+  // Same GitHub Pages origin as ikorka-luiza, so sessionStorage is shared
+  // across both apps — seed her personal panel's own keys before leaving,
+  // so she lands there already logged in as owner.
+  function goToLuiza() {
+    const pin = sessionStorage.getItem("ikorka_sysadmin_pin");
+    if (pin) {
+      sessionStorage.setItem("ikorka_luiza_pin", pin);
+      sessionStorage.setItem("ikorka_luiza_role", "owner");
+    }
+    window.location.href = LUIZA_URL;
+  }
+
   return (
     <div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${T.border}`, padding: "0 20px", justifyContent: "space-between" }}>
       <div style={{ display: "flex" }}>
@@ -221,6 +235,11 @@ function TopBar({ tab, setTab, onLogout, role }) {
         })}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        {role === "owner" && (
+          <button onClick={goToLuiza} style={{ background: "none", border: "none", color: T.blue, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600 }}>
+            <ChevronLeft size={14} /> Моя панель
+          </button>
+        )}
         <span style={{ color: T.sub, fontSize: 12.5 }}>
           Ви увійшли як: <span style={{ color: T.text, fontWeight: 600 }}>{ROLE_LABELS[role] || role}</span>
         </span>
@@ -244,6 +263,8 @@ function EquipmentTab({ items, reload }) {
   const [logForm, setLogForm] = useState({
     date: new Date().toISOString().slice(0, 10), item: "", detail: "", action: "",
   });
+  const [editingOwnerId, setEditingOwnerId] = useState(null);
+  const [ownerValue, setOwnerValue] = useState("");
 
   const zoneItems = items.filter((i) => (i.zone || "warehouse") === zone);
   const filtered = zoneItems.filter((i) => catFilter === "all" || i.cat === catFilter);
@@ -265,6 +286,15 @@ function EquipmentTab({ items, reload }) {
   }
   async function setStatus(id, status) {
     await api.updateEquipment(id, { status });
+    reload();
+  }
+  function startOwnerEdit(item) {
+    setEditingOwnerId(item.id);
+    setOwnerValue(item.owner || "");
+  }
+  async function saveOwner(id) {
+    await api.updateEquipment(id, { owner: ownerValue.trim() || "—" });
+    setEditingOwnerId(null);
     reload();
   }
   async function setItemZone(id, newZone) {
@@ -446,7 +476,27 @@ function EquipmentTab({ items, reload }) {
                 {item.name}
               </div>
               <div style={{ flex: 1, color: T.sub, fontFamily: "ui-monospace, monospace", fontSize: 12 }}>{item.inv || "—"}</div>
-              <div style={{ flex: 1.4, color: T.sub }}>{item.owner || "—"}</div>
+              <div style={{ flex: 1.4 }}>
+                {editingOwnerId === item.id ? (
+                  <input
+                    autoFocus
+                    value={ownerValue}
+                    onChange={(e) => setOwnerValue(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && saveOwner(item.id)}
+                    onBlur={() => saveOwner(item.id)}
+                    style={{ ...inputStyle, width: "100%", padding: "3px 6px", fontSize: 12.5, boxSizing: "border-box" }}
+                  />
+                ) : (
+                  <div
+                    onClick={() => startOwnerEdit(item)}
+                    title="Клікніть, щоб змінити"
+                    style={{ color: T.sub, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                  >
+                    {item.owner || "—"}
+                    <Pencil size={11} style={{ opacity: 0.5, flexShrink: 0 }} />
+                  </div>
+                )}
+              </div>
               <div style={{ flex: 1, color: stale ? T.amber : T.sub, display: "flex", alignItems: "center", gap: 5 }}>
                 {stale && <AlertTriangle size={12} />}
                 {item.last_check ? String(item.last_check).slice(0, 10) : "—"}
