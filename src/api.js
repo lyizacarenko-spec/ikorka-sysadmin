@@ -70,6 +70,8 @@ export const api = {
     request(`/assigned-tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
   editAssignedTitle: (id, title) =>
     request(`/assigned-tasks/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
+  setAssignedReport: (id, report) =>
+    request(`/assigned-tasks/${id}`, { method: "PATCH", body: JSON.stringify({ report }) }),
   deleteAssigned: (id) => request(`/assigned-tasks/${id}`, { method: "DELETE" }),
 
   getAssets: () => request("/assets"),

@@ -662,6 +662,10 @@ function AssignedTab({ items, reload, role }) {
   const [title, setTitle] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
+  // Draft report text per task — uncontrolled from the DB value until
+  // touched, so re-renders from reload() don't fight typing. Saved on
+  // blur; stays editable regardless of status, including "Завершено".
+  const [reportDrafts, setReportDrafts] = useState({});
 
   async function addTask() {
     if (!title.trim()) return;
@@ -689,6 +693,12 @@ function AssignedTab({ items, reload, role }) {
   }
   async function remove(id) {
     await api.deleteAssigned(id);
+    reload();
+  }
+  async function saveReport(task) {
+    const draft = reportDrafts[task.id];
+    if (draft === undefined || draft === (task.report || "")) return;
+    await api.setAssignedReport(task.id, draft);
     reload();
   }
 
@@ -762,6 +772,17 @@ function AssignedTab({ items, reload, role }) {
                     </button>
                   )}
                 </div>
+              </div>
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
+                <label style={labelStyle}>Звіт / нотатки</label>
+                <textarea
+                  value={reportDrafts[task.id] !== undefined ? reportDrafts[task.id] : (task.report || "")}
+                  onChange={(e) => setReportDrafts({ ...reportDrafts, [task.id]: e.target.value })}
+                  onBlur={() => saveReport(task)}
+                  placeholder="Що знайдено, що виправлено, що потребує закупівлі..."
+                  rows={2}
+                  style={{ ...inputStyle, width: "100%", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }}
+                />
               </div>
             </div>
           );
